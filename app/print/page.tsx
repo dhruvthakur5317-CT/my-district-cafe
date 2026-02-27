@@ -4,12 +4,8 @@ import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { UploadCloud, File, Trash2, Printer, CheckCircle, IndianRupee, MapPin, Phone, User, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PDFDocument } from 'pdf-lib';
 import axios from "axios";
-
-const PRICING = {
-    "B&W": { A4: 2, A3: 5, Legal: 3 },
-    Color: { A4: 10, A3: 20, Legal: 15 },
-};
 
 export default function PrintPage() {
     const [step, setStep] = useState(1);
@@ -29,6 +25,8 @@ export default function PrintPage() {
         totalPages: 1, // User estimates this for now, verify later
         customInstructions: "",
         deliveryOption: "Pickup" as "Pickup" | "Home Delivery",
+        distanceKm: 1,
+        deliveryAddress: "",
     });
 
     const [customer, setCustomer] = useState({
@@ -37,10 +35,23 @@ export default function PrintPage() {
         email: "",
     });
 
-    const onDrop = useCallback((acceptedFiles: File[]) => {
+    const onDrop = useCallback(async (acceptedFiles: File[]) => {
         if (acceptedFiles.length > 0) {
-            setFile(acceptedFiles[0]);
+            const uploadedFile = acceptedFiles[0];
+            setFile(uploadedFile);
             setStep(2);
+
+            // Auto-detect PDF page count
+            if (uploadedFile.type === "application/pdf") {
+                try {
+                    const arrayBuffer = await uploadedFile.arrayBuffer();
+                    const pdfDoc = await PDFDocument.load(arrayBuffer);
+                    const pages = pdfDoc.getPageCount();
+                    setOrderDetails(prev => ({ ...prev, totalPages: pages }));
+                } catch (err) {
+                    console.error("Error reading PDF metadata:", err);
+                }
+            }
         }
     }, []);
 
@@ -64,11 +75,29 @@ export default function PrintPage() {
         maxFiles: 1,
     });
 
+    const currentPriceBw = siteSettings.priceBw || 2;
+    const currentPriceColor = siteSettings.priceColor || 10;
+
+    const PRICING = {
+        "B&W": { A4: currentPriceBw, A3: currentPriceBw * 2, Legal: currentPriceBw * 1.5 },
+        Color: { A4: currentPriceColor, A3: currentPriceColor * 2, Legal: currentPriceColor * 1.5 },
+    };
+
     const calculatePrice = () => {
         const basePrice = PRICING[orderDetails.printType][orderDetails.paperSize];
         const subtotal = basePrice * orderDetails.totalPages * orderDetails.numCopies;
-        const deliveryCharge = orderDetails.deliveryOption === "Home Delivery" ? 50 : 0;
-        return subtotal + deliveryCharge;
+
+        let deliveryCharge = 0;
+        if (orderDetails.deliveryOption === "Home Delivery") {
+            const petrolPrice = siteSettings.petrolPrice || 100;
+            const vehicleAvg = siteSettings.vehicleAvg || 40;
+            const costPerKm = petrolPrice / vehicleAvg;
+
+            // Base delivery is minimum ₹20, otherwise distance * cost/km * 2 (roundtrip)
+            deliveryCharge = Math.max(20, Math.round(orderDetails.distanceKm * costPerKm * 2));
+        }
+
+        return Math.round(subtotal + deliveryCharge);
     };
 
     const totalPrice = calculatePrice();
@@ -93,6 +122,7 @@ export default function PrintPage() {
                 totalPages: orderDetails.totalPages,
                 customInstructions: orderDetails.customInstructions,
                 deliveryOption: orderDetails.deliveryOption,
+                deliveryAddress: orderDetails.deliveryAddress,
                 totalPrice: totalPrice,
             });
 
@@ -197,8 +227,8 @@ export default function PrintPage() {
                                                 onChange={(e) => setOrderDetails(prev => ({ ...prev, printType: e.target.value as "B&W" | "Color" }))}
                                                 className="w-full bg-black border border-white/10 rounded-xl py-4 px-4 focus:border-primary outline-none"
                                             >
-                                                <option value="B&W">Black & White (₹2 - ₹5)</option>
-                                                <option value="Color">Color (₹10 - ₹20)</option>
+                                                <option value="B&W">Black & White (₹{currentPriceBw} - ₹{currentPriceBw * 2})</option>
+                                                <option value="Color">Color (₹{currentPriceColor} - ₹{currentPriceColor * 2})</option>
                                             </select>
                                         </div>
 
@@ -224,6 +254,19 @@ export default function PrintPage() {
                                                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Copies</label>
                                                 <input type="number" min="1" value={orderDetails.numCopies} onChange={(e) => setOrderDetails(prev => ({ ...prev, numCopies: parseInt(e.target.value) || 1 }))} className="w-full bg-black border border-white/10 rounded-xl py-4 px-4 focus:border-primary outline-none" />
                                             </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex justify-between">
+                                                <span>Custom Instructions</span>
+                                                <span className="text-gray-600 font-normal">Optional</span>
+                                            </label>
+                                            <textarea
+                                                value={orderDetails.customInstructions}
+                                                onChange={(e) => setOrderDetails(prev => ({ ...prev, customInstructions: e.target.value }))}
+                                                className="w-full bg-black border border-white/10 rounded-xl py-4 px-4 focus:border-primary outline-none min-h-[100px]"
+                                                placeholder="e.g. Please spiral bind this, or print pages 1-5 only."
+                                            />
                                         </div>
                                     </div>
 
@@ -302,10 +345,38 @@ export default function PrintPage() {
                                                 className={`py-4 rounded-xl border transition-all text-sm font-bold uppercase tracking-widest flex items-center justify-center flex-col ${orderDetails.deliveryOption === 'Home Delivery' ? 'bg-primary/20 border-primary text-primary-light' : 'bg-black border-white/10 text-gray-400 hover:border-white/30'}`}
                                             >
                                                 <span>Home Delivery</span>
-                                                <span className="text-[10px] mt-1 opacity-70">+ ₹50 Charge</span>
+                                                <span className="text-[10px] mt-1 opacity-70">Variable Charge</span>
                                             </button>
                                         </div>
                                     </div>
+
+                                    {orderDetails.deliveryOption === "Home Delivery" && (
+                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="space-y-4">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Delivery Address</label>
+                                                <textarea
+                                                    value={orderDetails.deliveryAddress || ""}
+                                                    onChange={e => setOrderDetails(prev => ({ ...prev, deliveryAddress: e.target.value }))}
+                                                    className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 focus:border-primary outline-none min-h-[80px]"
+                                                    placeholder="Enter your full home address"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Approximate Distance from Cafe (in km)</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    value={orderDetails.distanceKm}
+                                                    onChange={e => setOrderDetails(prev => ({ ...prev, distanceKm: Math.max(1, parseInt(e.target.value) || 1) }))}
+                                                    className="w-full bg-black border border-primary/50 text-primary-light rounded-xl py-4 px-4 focus:border-primary outline-none"
+                                                    placeholder="e.g. 5"
+                                                />
+                                                <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">
+                                                    Delivery Fee: ₹{Math.max(20, Math.round(orderDetails.distanceKm * ((siteSettings.petrolPrice || 100) / (siteSettings.vehicleAvg || 40)) * 2))}
+                                                </p>
+                                            </div>
+                                        </motion.div>
+                                    )}
                                 </div>
 
                                 <div className="flex flex-col md:flex-row justify-between items-center p-6 bg-primary/10 border border-primary/20 rounded-2xl">
@@ -318,7 +389,7 @@ export default function PrintPage() {
                                     <div className="flex flex-col items-center gap-3">
                                         <button
                                             onClick={handlePaymentInit}
-                                            disabled={loading || !customer.name || customer.phone.length !== 10}
+                                            disabled={loading || !customer.name || customer.phone.length !== 10 || (orderDetails.deliveryOption === 'Home Delivery' && !orderDetails.deliveryAddress)}
                                             className="w-full md:w-auto px-10 py-5 bg-primary hover:bg-primary-light disabled:opacity-50 text-white rounded-xl font-black text-lg transition-all shadow-xl glow-red flex items-center justify-center gap-2"
                                         >
                                             {loading ? <Loader2 className="animate-spin" /> : "PAY SECURELY"}
@@ -360,87 +431,89 @@ export default function PrintPage() {
                         )}
 
                     </AnimatePresence>
-                </div>
-            </div>
+                </div >
+            </div >
 
             {/* CUSTOM PAYMENT GATEWAY MODAL FOR DEMONSTRATION */}
-            {showPaymentModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <motion.div
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-zinc-950 border border-white/10 p-8 rounded-3xl max-w-sm w-full text-center shadow-[0_0_50px_rgba(139,0,0,0.3)]"
-                    >
-                        <h3 className="text-xl font-black mb-2 uppercase tracking-tight text-white">Select Payment Mode</h3>
-                        <p className="text-sm text-gray-400 mb-6">Amount to pay: <span className="text-primary-light font-bold">₹{totalPrice}</span></p>
+            {
+                showPaymentModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="bg-zinc-950 border border-white/10 p-8 rounded-3xl max-w-sm w-full text-center shadow-[0_0_50px_rgba(139,0,0,0.3)]"
+                        >
+                            <h3 className="text-xl font-black mb-2 uppercase tracking-tight text-white">Select Payment Mode</h3>
+                            <p className="text-sm text-gray-400 mb-6">Amount to pay: <span className="text-primary-light font-bold">₹{totalPrice}</span></p>
 
-                        {loading ? (
-                            <div className="py-8 flex flex-col items-center">
-                                <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-                                <p className="text-gray-400 font-bold tracking-widest uppercase text-sm">Processing Payment...</p>
-                            </div>
-                        ) : paymentMethod === "UPI" ? (
-                            <div className="space-y-4 text-left">
-                                <div className="p-4 bg-primary/10 border border-primary/30 rounded-xl relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 w-20 h-20 bg-primary/20 blur-2xl rounded-full"></div>
-                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Send ₹{totalPrice} exactly to UPI ID:</p>
-                                    <p className="text-lg font-black text-white select-all">{siteSettings?.upiId || "mydistrictcafe@upi"}</p>
+                            {loading ? (
+                                <div className="py-8 flex flex-col items-center">
+                                    <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
+                                    <p className="text-gray-400 font-bold tracking-widest uppercase text-sm">Processing Payment...</p>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sender Name (from UPI App)</label>
-                                    <input
-                                        value={upiName}
-                                        onChange={(e) => setUpiName(e.target.value)}
-                                        placeholder="e.g. John Doe (Required)"
-                                        className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 focus:border-primary outline-none text-white text-sm"
-                                    />
+                            ) : paymentMethod === "UPI" ? (
+                                <div className="space-y-4 text-left">
+                                    <div className="p-4 bg-primary/10 border border-primary/30 rounded-xl relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-20 h-20 bg-primary/20 blur-2xl rounded-full"></div>
+                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Send ₹{totalPrice} exactly to UPI ID:</p>
+                                        <p className="text-lg font-black text-white select-all">{siteSettings?.upiId || "mydistrictcafe@upi"}</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sender Name (from UPI App)</label>
+                                        <input
+                                            value={upiName}
+                                            onChange={(e) => setUpiName(e.target.value)}
+                                            placeholder="e.g. John Doe (Required)"
+                                            className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 focus:border-primary outline-none text-white text-sm"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Enter UTR / Ref Number</label>
+                                        <input
+                                            value={utrNumber}
+                                            onChange={(e) => setUtrNumber(e.target.value)}
+                                            placeholder="e.g. 123456789012"
+                                            className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 focus:border-primary outline-none text-white text-sm"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={() => handleSimulatedPayment("UPI")}
+                                        className="w-full py-4 bg-primary hover:bg-primary-light text-white rounded-xl font-bold uppercase tracking-widest transition-all glow-red mt-2"
+                                    >
+                                        Verify Payment & Continue
+                                    </button>
+                                    <button onClick={() => setPaymentMethod(null)} className="w-full text-xs text-gray-500 hover:text-white uppercase font-bold tracking-widest pt-2">Back to Payment Options</button>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Enter UTR / Ref Number</label>
-                                    <input
-                                        value={utrNumber}
-                                        onChange={(e) => setUtrNumber(e.target.value)}
-                                        placeholder="e.g. 123456789012"
-                                        className="w-full bg-black border border-white/10 rounded-xl py-3 px-4 focus:border-primary outline-none text-white text-sm"
-                                    />
-                                </div>
-                                <button
-                                    onClick={() => handleSimulatedPayment("UPI")}
-                                    className="w-full py-4 bg-primary hover:bg-primary-light text-white rounded-xl font-bold uppercase tracking-widest transition-all glow-red mt-2"
-                                >
-                                    Verify Payment & Continue
-                                </button>
-                                <button onClick={() => setPaymentMethod(null)} className="w-full text-xs text-gray-500 hover:text-white uppercase font-bold tracking-widest pt-2">Back to Payment Options</button>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                <button
-                                    onClick={() => setPaymentMethod("UPI")}
-                                    className="w-full p-4 rounded-xl border border-white/10 bg-black hover:border-primary/50 flex flex-col justify-center items-center group transition-colors gap-2"
-                                >
-                                    <span className="font-bold text-white group-hover:text-primary text-lg">Pay via UPI</span>
-                                    <span className="text-xs font-bold text-gray-500">Google Pay, PhonePe, Paytm</span>
-                                </button>
+                            ) : (
+                                <div className="space-y-3">
+                                    <button
+                                        onClick={() => setPaymentMethod("UPI")}
+                                        className="w-full p-4 rounded-xl border border-white/10 bg-black hover:border-primary/50 flex flex-col justify-center items-center group transition-colors gap-2"
+                                    >
+                                        <span className="font-bold text-white group-hover:text-primary text-lg">Pay via UPI</span>
+                                        <span className="text-xs font-bold text-gray-500">Google Pay, PhonePe, Paytm</span>
+                                    </button>
 
-                                <button
-                                    onClick={() => handleSimulatedPayment("CASH")}
-                                    className="w-full p-4 rounded-xl border border-white/10 bg-black hover:border-green-500/50 flex flex-col justify-center items-center group transition-colors gap-2"
-                                >
-                                    <span className="font-bold text-white group-hover:text-green-500 text-lg">Pay with Cash</span>
-                                    <span className="text-xs font-bold text-gray-500">Pay directly at the store counter</span>
-                                </button>
+                                    <button
+                                        onClick={() => handleSimulatedPayment("CASH")}
+                                        className="w-full p-4 rounded-xl border border-white/10 bg-black hover:border-green-500/50 flex flex-col justify-center items-center group transition-colors gap-2"
+                                    >
+                                        <span className="font-bold text-white group-hover:text-green-500 text-lg">Pay with Cash</span>
+                                        <span className="text-xs font-bold text-gray-500">Pay directly at the store counter</span>
+                                    </button>
 
-                                <button
-                                    onClick={() => setShowPaymentModal(false)}
-                                    className="mt-4 text-xs font-bold text-gray-500 hover:text-white uppercase tracking-widest pt-4 block w-full border-t border-white/5"
-                                >
-                                    Cancel & Return
-                                </button>
-                            </div>
-                        )}
-                    </motion.div>
-                </div>
-            )}
-        </div>
+                                    <button
+                                        onClick={() => setShowPaymentModal(false)}
+                                        className="mt-4 text-xs font-bold text-gray-500 hover:text-white uppercase tracking-widest pt-4 block w-full border-t border-white/5"
+                                    >
+                                        Cancel & Return
+                                    </button>
+                                </div>
+                            )}
+                        </motion.div>
+                    </div>
+                )
+            }
+        </div >
     );
 }

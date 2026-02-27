@@ -33,6 +33,16 @@ export const globalStore = (global as any).store || {
         }
     ],
     deletedOrders: [],
+    contactMessages: [
+        {
+            id: "msg_001",
+            name: "John Doe",
+            email: "john@example.com",
+            message: "Do you guys do bulk prints for marketing materials?",
+            createdAt: new Date().toISOString(),
+            read: false
+        }
+    ],
     settings: {
         phone: "+91 98765 43210",
         email: "contact@mydistrictcafe.com",
@@ -40,6 +50,10 @@ export const globalStore = (global as any).store || {
         upiId: "mydistrictcafe@upi",
         adminUsername: "ADMIN",
         adminPassword: "admin123",
+        priceColor: 10,
+        priceBw: 2,
+        petrolPrice: 100,
+        vehicleAvg: 40,
         services: [
             {
                 id: "service_1",
@@ -65,10 +79,27 @@ export const globalStore = (global as any).store || {
                 description: "Expert assistance with government, passport, exam, and university application forms.",
                 icon: "FileText"
             }
-        ]
+        ],
+        flashMessage: {
+            text: "Welcome to My District Cafe! Get 10% off on all bulk color prints this week!",
+            isActive: false,
+            activeUntil: new Date(Date.now() + 86400000).toISOString()
+        }
     }
 };
 
 if (!(global as any).store) {
     (global as any).store = globalStore;
+}
+
+// Ensure properties exist if the store was preserved from an older session (HMR)
+if (!(global as any).store.contactMessages) {
+    (global as any).store.contactMessages = [];
+}
+if (!(global as any).store.settings.flashMessage) {
+    (global as any).store.settings.flashMessage = {
+        text: "Welcome to My District Cafe! Get 10% off on all bulk color prints this week!",
+        isActive: false,
+        activeUntil: new Date(Date.now() + 86400000).toISOString()
+    };
 }

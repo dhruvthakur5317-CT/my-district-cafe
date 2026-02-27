@@ -6,6 +6,8 @@
   --color-dark: var(--bg-color);
   --color-dark-gray: var(--bg-secondary);
   --color-accent: var(--accent);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
   --font-inter: "Inter", sans-serif;
 
   --animate-float: float 3s ease-in-out infinite;

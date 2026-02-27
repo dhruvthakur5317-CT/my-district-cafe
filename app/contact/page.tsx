@@ -7,6 +7,11 @@ import { Mail, MapPin, Phone, Send, Loader2 } from 'lucide-react';
 
 export default function ContactPage() {
     const [settings, setSettings] = useState<any>(null);
+    const [name, setName] = useState("");
+    const [email, setEmail] = useState("");
+    const [message, setMessage] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+    const [successMsg, setSuccessMsg] = useState("");
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -19,6 +24,25 @@ export default function ContactPage() {
         };
         fetchSettings();
     }, []);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSubmitting(true);
+        setSuccessMsg("");
+        try {
+            const res = await axios.post("/api/contact", { name, email, message });
+            if (res.data.success) {
+                setSuccessMsg("Thanks! Your message has been sent to our team.");
+                setName("");
+                setEmail("");
+                setMessage("");
+            }
+        } catch (error) {
+            alert("Failed to send message. Please try again.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     return (
         <div className="min-h-screen pt-32 pb-20 px-4">
@@ -37,7 +61,7 @@ export default function ContactPage() {
 
                     <div className="glass p-8 rounded-3xl border border-white/5 space-y-8 h-full shadow-[0_0_30px_rgba(139,0,0,0.05)]">
                         <h3 className="text-2xl font-black uppercase tracking-widest text-white mb-6">Contact Info</h3>
-                        
+
                         <div className="flex items-start gap-4 group">
                             <div className="p-3 rounded-xl bg-primary/10 text-primary-light group-hover:bg-primary group-hover:text-white transition-colors">
                                 <MapPin className="w-6 h-6" />
@@ -78,24 +102,29 @@ export default function ContactPage() {
                 >
                     <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter">Send a <span className="text-primary">Message</span></h2>
 
-                    <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); alert("Thanks for the message! We'll reply soon."); }}>
+                    <form className="space-y-6" onSubmit={handleSubmit}>
+                        {successMsg && (
+                            <div className="bg-green-500/10 border border-green-500/30 text-green-400 p-4 rounded-xl text-sm font-bold text-center">
+                                {successMsg}
+                            </div>
+                        )}
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Your Name</label>
-                            <input required className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 px-4 focus:border-primary outline-none transition-all text-white" placeholder="John Doe" />
+                            <input value={name} onChange={e => setName(e.target.value)} required className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 px-4 focus:border-primary outline-none transition-all text-white" placeholder="John Doe" />
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Email / Phone</label>
-                            <input required className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 px-4 focus:border-primary outline-none transition-all text-white" placeholder="john@example.com" />
+                            <input value={email} onChange={e => setEmail(e.target.value)} required className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 px-4 focus:border-primary outline-none transition-all text-white" placeholder="john@example.com" />
                         </div>
 
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Message</label>
-                            <textarea required rows={4} className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 px-4 focus:border-primary outline-none transition-all text-white resize-none" placeholder="How can we help?" />
+                            <textarea value={message} onChange={e => setMessage(e.target.value)} required rows={4} className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 px-4 focus:border-primary outline-none transition-all text-white resize-none" placeholder="How can we help?" />
                         </div>
 
-                        <button type="submit" className="w-full py-5 bg-primary hover:bg-primary-light text-white rounded-2xl font-black text-lg transition-all shadow-xl glow-red flex items-center justify-center gap-3 mt-4">
-                            SEND NOW <Send size={20} />
+                        <button disabled={submitting} type="submit" className="w-full py-5 bg-primary hover:bg-primary-light disabled:opacity-50 text-white rounded-2xl font-black text-lg transition-all shadow-xl glow-red flex items-center justify-center gap-3 mt-4">
+                            {submitting ? <Loader2 className="animate-spin w-5 h-5" /> : <>SEND NOW <Send size={20} /></>}
                         </button>
                     </form>
                 </motion.div>
