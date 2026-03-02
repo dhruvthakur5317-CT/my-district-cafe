@@ -103,18 +103,34 @@ export default function PrintPage() {
     const totalPrice = calculatePrice();
 
     const handlePaymentInit = async () => {
+        if (!file) {
+            alert("No file selected for upload.");
+            return;
+        }
+
         setLoading(true);
         try {
-            // Mock Cloudinary Upload Simulation
-            const fakeUploadedUrl = "https://res.cloudinary.com/demo/image/upload/v1550000000/sample.jpg";
+            // Actual File Upload
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const uploadRes = await axios.post("/api/upload", formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+
+            if (!uploadRes.data.success || !uploadRes.data.url) {
+                throw new Error("Failed to upload file to the server.");
+            }
+
+            const uploadedFileUrl = uploadRes.data.url;
 
             // Create Order on Backend (Mocked in memory)
             const createRes = await axios.post("/api/order/create", {
                 customerName: customer.name,
                 phoneNumber: customer.phone,
                 email: customer.email,
-                fileUrl: fakeUploadedUrl,
-                fileName: file?.name,
+                fileUrl: uploadedFileUrl,
+                fileName: file.name,
                 fileType: file?.type,
                 printType: orderDetails.printType,
                 paperSize: orderDetails.paperSize,
