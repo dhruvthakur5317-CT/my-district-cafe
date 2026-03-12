@@ -18,15 +18,19 @@ export default function PrintPage() {
     const [upiName, setUpiName] = useState("");
     const [paymentMethod, setPaymentMethod] = useState<"UPI" | "CASH" | null>(null);
 
+    const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
     const [orderDetails, setOrderDetails] = useState({
         printType: "B&W" as "B&W" | "Color",
         paperSize: "A4" as "A4" | "A3" | "Legal",
         numCopies: 1,
-        totalPages: 1, // User estimates this for now, verify later
+        totalPages: 1,
         customInstructions: "",
         deliveryOption: "Pickup" as "Pickup" | "Home Delivery",
-        distanceKm: 1,
+        distanceKm: 0,
         deliveryAddress: "",
+        customerLocationUrl: "",
+        customerLat: 0,
+        customerLon: 0,
     });
 
     const [customer, setCustomer] = useState({
@@ -83,21 +87,59 @@ export default function PrintPage() {
         Color: { A4: currentPriceColor, A3: currentPriceColor * 2, Legal: currentPriceColor * 1.5 },
     };
 
+    const calculateDeliveryFee = () => {
+        if (orderDetails.deliveryOption !== "Home Delivery" || !orderDetails.distanceKm) return 0;
+        const petrolPrice = siteSettings.petrolPrice || 100;
+        const vehicleAvg = siteSettings.vehicleAvg || 40;
+        const costPerKm = petrolPrice / vehicleAvg;
+        return Math.max(20, Math.round(orderDetails.distanceKm * costPerKm * 2));
+    };
+
     const calculatePrice = () => {
         const basePrice = PRICING[orderDetails.printType][orderDetails.paperSize];
         const subtotal = basePrice * orderDetails.totalPages * orderDetails.numCopies;
+        return Math.round(subtotal + calculateDeliveryFee());
+    };
 
-        let deliveryCharge = 0;
-        if (orderDetails.deliveryOption === "Home Delivery") {
-            const petrolPrice = siteSettings.petrolPrice || 100;
-            const vehicleAvg = siteSettings.vehicleAvg || 40;
-            const costPerKm = petrolPrice / vehicleAvg;
-
-            // Base delivery is minimum ₹20, otherwise distance * cost/km * 2 (roundtrip)
-            deliveryCharge = Math.max(20, Math.round(orderDetails.distanceKm * costPerKm * 2));
+    const handleShareGoogleMapsLocation = () => {
+        if (!navigator.geolocation) {
+            alert("Your browser does not support location sharing.");
+            return;
         }
+        setLocationStatus("loading");
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                const cafeLat = siteSettings.cafeLat || 28.6139;
+                const cafeLon = siteSettings.cafeLon || 77.2090;
 
-        return Math.round(subtotal + deliveryCharge);
+                // Haversine formula for distance calculation
+                const R = 6371;
+                const dLat = (latitude - cafeLat) * (Math.PI / 180);
+                const dLon = (longitude - cafeLon) * (Math.PI / 180);
+                const a = Math.sin(dLat / 2) ** 2 +
+                    Math.cos(cafeLat * Math.PI / 180) * Math.cos(latitude * Math.PI / 180) *
+                    Math.sin(dLon / 2) ** 2;
+                const distanceKm = parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
+
+                const locationUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+
+                setOrderDetails(prev => ({
+                    ...prev,
+                    customerLat: latitude,
+                    customerLon: longitude,
+                    customerLocationUrl: locationUrl,
+                    distanceKm,
+                }));
+                setLocationStatus("done");
+            },
+            (err) => {
+                console.error(err);
+                setLocationStatus("error");
+                alert("Could not get your location. Please allow location access and try again.");
+            },
+            { enableHighAccuracy: true }
+        );
     };
 
     const totalPrice = calculatePrice();
@@ -124,7 +166,7 @@ export default function PrintPage() {
 
             const uploadedFileUrl = uploadRes.data.url;
 
-            // Create Order on Backend (Mocked in memory)
+            // Create Order on Backend
             const createRes = await axios.post("/api/order/create", {
                 customerName: customer.name,
                 phoneNumber: customer.phone,
@@ -139,6 +181,11 @@ export default function PrintPage() {
                 customInstructions: orderDetails.customInstructions,
                 deliveryOption: orderDetails.deliveryOption,
                 deliveryAddress: orderDetails.deliveryAddress,
+                customerLocationUrl: orderDetails.customerLocationUrl,
+                customerLat: orderDetails.customerLat,
+                customerLon: orderDetails.customerLon,
+                deliveryDistanceKm: orderDetails.distanceKm,
+                deliveryFee: calculateDeliveryFee(),
                 totalPrice: totalPrice,
             });
 
@@ -377,19 +424,40 @@ export default function PrintPage() {
                                                     placeholder="Enter your full home address"
                                                 />
                                             </div>
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Approximate Distance from Cafe (in km)</label>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    value={orderDetails.distanceKm}
-                                                    onChange={e => setOrderDetails(prev => ({ ...prev, distanceKm: Math.max(1, parseInt(e.target.value) || 1) }))}
-                                                    className="w-full bg-black border border-primary/50 text-primary-light rounded-xl py-4 px-4 focus:border-primary outline-none"
-                                                    placeholder="e.g. 5"
-                                                />
-                                                <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">
-                                                    Delivery Fee: ₹{Math.max(20, Math.round(orderDetails.distanceKm * ((siteSettings.petrolPrice || 100) / (siteSettings.vehicleAvg || 40)) * 2))}
-                                                </p>
+
+                                            {/* Google Maps Location Sharing - REQUIRED */}
+                                            <div className="space-y-3">
+                                                <label className="text-xs font-bold text-red-400 uppercase tracking-widest flex items-center gap-2">
+                                                    <MapPin size={14} /> Share Location via Google Maps
+                                                    <span className="bg-red-500/20 text-red-400 text-[9px] px-2 py-0.5 rounded-full">REQUIRED</span>
+                                                </label>
+
+                                                {locationStatus !== "done" ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleShareGoogleMapsLocation}
+                                                        disabled={locationStatus === "loading"}
+                                                        className="w-full py-4 rounded-xl border-2 border-dashed border-green-500/40 bg-green-500/5 hover:bg-green-500/10 text-green-400 font-bold flex items-center justify-center gap-3 transition-all"
+                                                    >
+                                                        {locationStatus === "loading" ? (
+                                                            <><Loader2 size={18} className="animate-spin" /> Detecting your location...</>
+                                                        ) : (
+                                                            <><MapPin size={18} /> 📍 Share My Location via Google Maps</>
+                                                        )}
+                                                    </button>
+                                                ) : (
+                                                    <div className="p-4 rounded-xl bg-green-500/10 border border-green-500/30 space-y-2">
+                                                        <div className="flex items-center gap-2 text-green-400 font-bold text-sm">
+                                                            <CheckCircle size={16} /> Location Shared Successfully!
+                                                        </div>
+                                                        <p className="text-xs text-gray-400">Distance from shop: <span className="text-white font-bold">{orderDetails.distanceKm} km</span></p>
+                                                        <p className="text-xs text-gray-400">Delivery Fee: <span className="text-primary-light font-bold">₹{calculateDeliveryFee()}</span></p>
+                                                        <a href={orderDetails.customerLocationUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline flex items-center gap-1">
+                                                            <MapPin size={12} /> View on Google Maps ↗
+                                                        </a>
+                                                        <button onClick={() => setLocationStatus("idle")} className="text-xs text-gray-500 hover:text-red-400 underline">Re-share location</button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </motion.div>
                                     )}
@@ -405,7 +473,7 @@ export default function PrintPage() {
                                     <div className="flex flex-col items-center gap-3">
                                         <button
                                             onClick={handlePaymentInit}
-                                            disabled={loading || !customer.name || customer.phone.length !== 10 || (orderDetails.deliveryOption === 'Home Delivery' && !orderDetails.deliveryAddress)}
+                                            disabled={loading || !customer.name || customer.phone.length !== 10 || (orderDetails.deliveryOption === 'Home Delivery' && (!orderDetails.deliveryAddress || locationStatus !== 'done'))}
                                             className="w-full md:w-auto px-10 py-5 bg-primary hover:bg-primary-light disabled:opacity-50 text-white rounded-xl font-black text-lg transition-all shadow-xl glow-red flex items-center justify-center gap-2"
                                         >
                                             {loading ? <Loader2 className="animate-spin" /> : "PAY SECURELY"}

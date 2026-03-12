@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Settings from "@/models/Settings";
+import { globalStore } from "@/lib/store";
 
 export async function GET(req: NextRequest) {
     try {
@@ -8,13 +9,14 @@ export async function GET(req: NextRequest) {
 
         let settings = await Settings.findOne();
         if (!settings) {
-            // Create default if none exist
             settings = await Settings.create({});
         }
 
         return NextResponse.json({ success: true, settings }, { status: 200 });
     } catch (error: any) {
-        return NextResponse.json({ error: "Failed to fetch settings" }, { status: 500 });
+        console.error("Admin Settings GET Error (falling back to defaults):", error.message);
+        // Fall back to in-memory defaults so the UI doesn't crash
+        return NextResponse.json({ success: true, settings: globalStore.settings, fallback: true }, { status: 200 });
     }
 }
 
@@ -23,16 +25,50 @@ export async function PUT(req: NextRequest) {
         await connectDB();
         const body = await req.json();
 
-        const { contactNumber, instagramHandle, pricePerPageBw, pricePerPageColor } = body;
+        const {
+            phone,
+            email,
+            address,
+            services,
+            upiId,
+            priceColor,
+            priceBw,
+            petrolPrice,
+            vehicleAvg,
+            cafeLat,
+            cafeLon,
+            flashMessage,
+            adminUsername,
+            adminPassword,
+        } = body;
+
+        const updatePayload: any = {
+            phone,
+            email,
+            address,
+            services,
+            upiId,
+            priceColor,
+            priceBw,
+            petrolPrice,
+            vehicleAvg,
+            cafeLat,
+            cafeLon,
+        };
+
+        if (flashMessage !== undefined) updatePayload.flashMessage = flashMessage;
+        if (adminUsername) updatePayload.adminUsername = adminUsername;
+        if (adminPassword) updatePayload.adminPassword = adminPassword;
 
         const updatedSettings = await Settings.findOneAndUpdate(
-            {}, // Match the first document
-            { contactNumber, instagramHandle, pricePerPageBw, pricePerPageColor },
+            {},
+            updatePayload,
             { new: true, upsert: true }
         );
 
         return NextResponse.json({ success: true, settings: updatedSettings }, { status: 200 });
     } catch (error: any) {
-        return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
+        console.error("Admin Settings PUT Error:", error);
+        return NextResponse.json({ error: "Failed to update settings", details: error.message }, { status: 500 });
     }
 }

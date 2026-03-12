@@ -13,8 +13,14 @@ export interface IOrder extends Document {
     totalPages: number;
     customInstructions?: string;
     deliveryOption: "Pickup" | "Home Delivery";
+    deliveryAddress?: string;
+    customerLocationUrl?: string;
+    customerLat?: number;
+    customerLon?: number;
+    deliveryDistanceKm?: number;
+    deliveryFee?: number;
     totalPrice: number;
-    paymentStatus: "Pending" | "Paid" | "Failed";
+    paymentStatus: "Pending" | "Paid" | "Failed" | "Pending Cash";
     orderStatus: "Pending" | "Printing" | "Ready" | "Delivered";
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
@@ -34,8 +40,14 @@ const OrderSchema: Schema = new Schema({
     totalPages: { type: Number, required: true },
     customInstructions: { type: String },
     deliveryOption: { type: String, enum: ["Pickup", "Home Delivery"], required: true },
+    deliveryAddress: { type: String },
+    customerLocationUrl: { type: String },
+    customerLat: { type: Number },
+    customerLon: { type: Number },
+    deliveryDistanceKm: { type: Number },
+    deliveryFee: { type: Number, default: 0 },
     totalPrice: { type: Number, required: true },
-    paymentStatus: { type: String, enum: ["Pending", "Paid", "Failed"], default: "Pending" },
+    paymentStatus: { type: String, enum: ["Pending", "Paid", "Failed", "Pending Cash"], default: "Pending" },
     orderStatus: { type: String, enum: ["Pending", "Printing", "Ready", "Delivered"], default: "Pending" },
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },

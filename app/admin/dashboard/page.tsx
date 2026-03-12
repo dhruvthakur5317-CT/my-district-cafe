@@ -58,7 +58,7 @@ export default function AdminDashboard() {
 
     const fetchSettings = async () => {
         try {
-            const { data } = await axios.get("/api/settings");
+            const { data } = await axios.get("/api/admin/settings");
             if (data.success) setSiteSettings(data.settings);
         } catch (error) {
             console.error("Failed to fetch settings");
@@ -68,15 +68,37 @@ export default function AdminDashboard() {
     const saveSettings = async () => {
         setSettingsSaving(true);
         try {
-            const { data } = await axios.post("/api/settings", siteSettings);
+            const { data } = await axios.put("/api/admin/settings", siteSettings);
             if (data.success) {
                 setSiteSettings(data.settings);
+                alert("✅ Settings saved successfully!");
                 setShowSettingsModal(false);
+            } else {
+                alert("Failed to save settings: " + (data.error || "Unknown error"));
             }
-        } catch (error) {
-            alert("Failed to save settings");
+        } catch (error: any) {
+            const msg = error?.response?.data?.details || error?.response?.data?.error || error.message;
+            alert("Failed to save settings: " + msg);
         } finally {
             setSettingsSaving(false);
+        }
+    };
+
+    const fetchShopLocationFromMap = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    setSiteSettings((prev: any) => ({
+                        ...prev,
+                        cafeLat: position.coords.latitude,
+                        cafeLon: position.coords.longitude,
+                    }));
+                    alert(`✅ Shop location auto-filled!\nLat: ${position.coords.latitude.toFixed(5)}\nLon: ${position.coords.longitude.toFixed(5)}`);
+                },
+                () => alert("Could not get location. Please enter coordinates manually.")
+            );
+        } else {
+            alert("Geolocation is not supported by this browser.");
         }
     };
 
@@ -453,146 +475,299 @@ export default function AdminDashboard() {
                             </div>
                         </div>
 
-                        {/* Orders Table */}
-                        <div className="glass-dark rounded-2xl border border-white/5 overflow-x-auto">
-                            {loading ? (
-                                <div className="flex flex-col items-center justify-center p-20 text-gray-400">
-                                    <Loader2 className="w-10 h-10 animate-spin mb-4" />
-                                    <p className="font-bold uppercase tracking-widest">Loading Orders...</p>
+                        {/* ORDERS SECTION */}
+                        <AnimatePresence mode="wait">
+                            <motion.div
+                                key={viewingRecycleBin ? "bin" : "active"}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="space-y-6"
+                            >
+                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                    <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-2">
+                                        {viewingRecycleBin ? <Trash2 className="text-primary" /> : <Printer className="text-primary" />}
+                                        {viewingRecycleBin ? "Recycle Bin" : "Active Orders"}
+                                        <span className="text-sm bg-primary/20 text-primary-light px-3 py-1 rounded-full font-bold ml-2">
+                                            {displayableList.length}
+                                        </span>
+                                    </h2>
+                                    {!viewingRecycleBin && (
+                                        <div className="flex items-center gap-2 bg-white/5 p-1 rounded-xl border border-white/10 w-full md:w-auto">
+                                            {["All", "Pending", "Printing", "Ready", "Delivered"].map(s => (
+                                                <button
+                                                    key={s}
+                                                    onClick={() => setFilterStatus(s)}
+                                                    className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex-1 md:flex-none ${filterStatus === s ? "bg-primary text-white shadow-lg shadow-primary/20" : "text-gray-400 hover:text-white hover:bg-white/5"}`}
+                                                >
+                                                    {s}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                            ) : displayableList.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center p-20 text-gray-500">
-                                    <ClipboardList className="w-12 h-12 mb-4 opacity-50" />
-                                    <p className="font-bold uppercase tracking-widest text-sm">
-                                        {viewingRecycleBin ? "Recycle bin is empty." : "No valid orders found."}
-                                    </p>
-                                </div>
-                            ) : (
-                                <table className="w-full text-left text-sm">
-                                    <thead className="text-xs text-gray-400 uppercase tracking-widest border-b border-white/10 bg-black/50">
-                                        <tr>
-                                            <th className="px-6 py-4">Order ID & Date</th>
-                                            <th className="px-6 py-4">Customer</th>
-                                            <th className="px-6 py-4">Print Specs</th>
-                                            <th className="px-6 py-4">Document</th>
-                                            <th className="px-6 py-4">Delivery</th>
-                                            <th className="px-6 py-4">Status</th>
-                                            <th className="px-6 py-4 border-l border-white/5">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {displayableList.map((order, i) => (
-                                            <motion.tr
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: i * 0.05 }}
-                                                key={order._id}
-                                                className="border-b border-white/5 hover:bg-white/5 transition-colors"
-                                            >
-                                                <td className="px-6 py-4">
-                                                    <p className="font-bold text-white mb-1">#{order._id.slice(-6).toUpperCase()}</p>
-                                                    <p className="text-xs text-gray-500 flex items-center gap-1 mb-2">
-                                                        <Clock size={12} /> {new Date(order.createdAt).toLocaleDateString()} • {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </p>
-                                                    <p className="text-[10px] uppercase font-bold tracking-widest text-primary bg-primary/10 px-2 py-1 rounded w-fit">
-                                                        {order.razorpayPaymentId === "CASH_COUNTER" ? "Cash at Store" : order.razorpayPaymentId?.startsWith("UPI") ? `UPI Ref: ${order.razorpayPaymentId.replace("UPI_", "")} (from ${order.upiName || "Unknown Sender"})` : order.razorpayPaymentId ? "Online / Card" : "Unpaid"}
-                                                    </p>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <p className="font-bold text-white capitalize">{order.customerName}</p>
-                                                    <p className="text-xs text-gray-400">{order.phoneNumber}</p>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <p className="text-white font-medium">{order.printType} • {order.paperSize}</p>
-                                                    <p className="text-xs text-gray-400 mb-2">{order.totalPages} pages × {order.numCopies} copies</p>
+
+                                {loading ? (
+                                    <div className="flex flex-col items-center justify-center p-20 text-gray-400">
+                                        <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                                        <p className="font-bold uppercase tracking-widest">Loading Orders...</p>
+                                    </div>
+                                ) : displayableList.length === 0 ? (
+                                    <div className="glass p-20 rounded-[40px] text-center border border-white/5">
+                                        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                                            <ClipboardList size={32} className="text-gray-600" />
+                                        </div>
+                                        <p className="text-gray-500 font-bold uppercase tracking-widest">
+                                            {viewingRecycleBin ? "Recycle bin is empty." : "No valid orders found."}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Desktop View Table (xl and up) */}
+                                        <div className="hidden xl:block overflow-x-auto glass-dark rounded-[40px] border border-white/5 shadow-2xl">
+                                            <table className="w-full border-collapse text-left">
+                                                <thead>
+                                                    <tr className="border-b border-white/10">
+                                                        <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest text-primary-light">Order & Payment</th>
+                                                        <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest text-primary-light">Customer</th>
+                                                        <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest text-primary-light">Print Config</th>
+                                                        <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest text-primary-light text-center">Actions</th>
+                                                        <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest text-primary-light">Delivery</th>
+                                                        <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest text-primary-light">Status</th>
+                                                        <th className="px-6 py-6 text-[10px] font-black uppercase tracking-widest text-primary-light border-l border-white/5">Controls</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-white/5">
+                                                    {displayableList.map((order) => (
+                                                        <tr key={order._id} className="group hover:bg-white/[0.02] transition-colors">
+                                                            <td className="px-6 py-4">
+                                                                <p className="text-[10px] font-mono text-gray-500 mb-1">{order._id.slice(-8).toUpperCase()}</p>
+                                                                <p className="font-bold text-lg text-white">₹{order.totalPrice}</p>
+                                                                <p className={`text-[10px] font-bold uppercase mt-1 ${order.paymentStatus === 'Paid' ? 'text-green-500' : 'text-yellow-500'}`}>
+                                                                    {order.paymentStatus}
+                                                                </p>
+                                                                <p className="text-[9px] text-gray-500 mt-1 max-w-[150px] leading-tight italic break-words">
+                                                                    {order.razorpayPaymentId === "CASH_COUNTER" ? "Cash at Store" : order.razorpayPaymentId?.startsWith("UPI") ? `UPI Ref: ${order.razorpayPaymentId.replace("UPI_", "")} (from ${order.upiName || "Unknown Sender"})` : order.razorpayPaymentId ? "Online / Card" : "Unpaid"}
+                                                                </p>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <p className="font-bold text-white capitalize">{order.customerName}</p>
+                                                                <p className="text-xs text-gray-400">{order.phoneNumber}</p>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <p className="text-white font-medium">{order.printType} • {order.paperSize}</p>
+                                                                <p className="text-xs text-gray-400 mb-2">{order.totalPages} pages × {order.numCopies} copies</p>
+                                                                {order.customInstructions && (
+                                                                    <div className="bg-yellow-500/10 border border-yellow-500/30 p-2 rounded-md max-w-xs">
+                                                                        <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1 flex items-center gap-1"><Info size={10} /> Instructions</p>
+                                                                        <p className="text-xs text-yellow-100/80 leading-snug">{order.customInstructions}</p>
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex flex-col gap-2">
+                                                                    <a
+                                                                        href={order.fileUrl}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary-light hover:bg-primary/20 transition-colors w-full font-bold text-xs uppercase tracking-widest"
+                                                                    >
+                                                                        <Download size={14} /> Download
+                                                                    </a>
+                                                                    <button
+                                                                        onClick={() => handleDirectPrint(order.fileUrl)}
+                                                                        className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors w-full font-bold text-xs uppercase tracking-widest"
+                                                                    >
+                                                                        <Printer size={14} /> Print
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className="font-bold text-xs uppercase tracking-widest text-gray-300 block mb-1">
+                                                                    {order.deliveryOption}
+                                                                </span>
+                                                                {order.deliveryOption === 'Home Delivery' && order.deliveryAddress && (
+                                                                    <div className="bg-white/5 border border-white/10 p-2 rounded-md mt-2 max-w-[200px]">
+                                                                        <p className="text-[10px] font-bold text-primary-light flex items-center gap-1 uppercase tracking-widest mb-1"><MapPin size={10} /> Address</p>
+                                                                        <p className="text-xs text-gray-300 leading-snug break-words">{order.deliveryAddress}</p>
+                                                                    </div>
+                                                                )}
+                                                                {order.deliveryOption === 'Home Delivery' && order.customerLocationUrl && (
+                                                                    <a
+                                                                        href={order.customerLocationUrl}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="mt-2 flex items-center gap-1 text-[10px] font-bold text-green-400 hover:text-green-300 bg-green-500/10 border border-green-500/20 hover:bg-green-500/20 rounded-md px-2 py-1.5 transition-all w-fit"
+                                                                    >
+                                                                        <MapPin size={10} /> See Customer Location ↗
+                                                                    </a>
+                                                                )}
+                                                                {order.deliveryOption === 'Home Delivery' && order.deliveryDistanceKm && (
+                                                                    <p className="text-[10px] text-gray-500 mt-1">{order.deliveryDistanceKm} km · ₹{order.deliveryFee} fee</p>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${getStatusColor(order.orderStatus)}`}>
+                                                                    {order.orderStatus}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 border-l border-white/5">
+                                                                {viewingRecycleBin ? (
+                                                                    <button
+                                                                        onClick={() => restoreOrder(order._id)}
+                                                                        className="p-3 w-full border border-green-500/30 rounded-lg text-green-500 hover:bg-green-500/10 hover:border-green-500/60 transition-colors flex items-center justify-center gap-2"
+                                                                        title="Restore Order"
+                                                                    >
+                                                                        <RefreshCcw size={14} />
+                                                                        <span className="text-[10px] font-bold uppercase tracking-widest">Restore</span>
+                                                                    </button>
+                                                                ) : (
+                                                                    <div className="flex flex-col gap-2">
+                                                                        <select
+                                                                            value={order.orderStatus}
+                                                                            onChange={(e) => updateOrderStatus(order._id, e.target.value)}
+                                                                            className="bg-black border border-white/10 rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest outline-none focus:border-primary text-gray-300 hover:text-white"
+                                                                        >
+                                                                            {["Pending", "Printing", "Ready", "Delivered"].map(s => (
+                                                                                <option key={s} value={s}>{s}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        <select
+                                                                            value={order.paymentStatus}
+                                                                            onChange={(e) => updatePaymentStatus(order._id, e.target.value)}
+                                                                            className="bg-black border border-white/10 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-green-500 text-gray-400 hover:text-white"
+                                                                        >
+                                                                            {["Pending Cash", "Paid", "Refunded", "Failed"].map(s => (
+                                                                                <option key={s} value={s}>{s}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        <button
+                                                                            onClick={() => deleteOrder(order._id)}
+                                                                            className="p-2 text-gray-500 hover:text-primary transition-colors flex items-center justify-center"
+                                                                            title="Delete Order"
+                                                                        >
+                                                                            <Trash2 size={14} />
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        {/* Mobile/Tablet View (hidden on xl) */}
+                                        <div className="xl:hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {displayableList.map((order) => (
+                                                <div key={order._id} className="glass-dark border border-white/5 rounded-3xl p-6 space-y-4 shadow-xl relative overflow-hidden group">
+                                                    <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="text-[10px] font-mono text-gray-500">{order._id.slice(-8).toUpperCase()} · {new Date(order.createdAt).toLocaleDateString()}</p>
+                                                            <h4 className="font-black text-xl text-white mt-1 capitalize">{order.customerName}</h4>
+                                                            <p className="text-gray-400 text-sm font-bold tracking-tight">{order.phoneNumber}</p>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-2xl font-black text-primary-light leading-none">₹{order.totalPrice}</p>
+                                                            <span className={`inline-block mt-2 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${getStatusColor(order.orderStatus)}`}>
+                                                                {order.orderStatus}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="bg-white/5 rounded-2xl p-4 space-y-2">
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-gray-500 font-bold uppercase tracking-widest">Print</span>
+                                                            <span className="text-white font-medium">{order.printType} • {order.paperSize}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-gray-500 font-bold uppercase tracking-widest">Details</span>
+                                                            <span className="text-white">{order.totalPages} pgs × {order.numCopies} cpy</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs items-center">
+                                                            <span className="text-gray-500 font-bold uppercase tracking-widest">Payment</span>
+                                                            <span className={`font-bold ${order.paymentStatus === 'Paid' ? 'text-green-500' : 'text-yellow-500'}`}>{order.paymentStatus}</span>
+                                                        </div>
+                                                        {order.razorpayPaymentId && (
+                                                            <p className="text-[9px] text-gray-500 italic pt-1 border-t border-white/5">
+                                                                {order.razorpayPaymentId === "CASH_COUNTER" ? "Cash at Store" : order.razorpayPaymentId.replace("UPI_", "UPI Ref: ")}
+                                                            </p>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="space-y-3">
+                                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                                                            <MapPin size={10} /> {order.deliveryOption}
+                                                        </p>
+                                                        {order.deliveryOption === 'Home Delivery' && (
+                                                            <div className="bg-black/40 border border-white/10 p-3 rounded-xl space-y-2">
+                                                                <p className="text-xs text-white leading-relaxed">{order.deliveryAddress}</p>
+                                                                {order.customerLocationUrl && (
+                                                                    <a
+                                                                        href={order.customerLocationUrl}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="flex items-center gap-2 text-[10px] font-bold text-green-400 hover:underline pt-1"
+                                                                    >
+                                                                        📍 GOOGLE MAPS LOCATION ↗
+                                                                    </a>
+                                                                )}
+                                                                {order.deliveryDistanceKm && (
+                                                                    <p className="text-[10px] text-gray-500">{order.deliveryDistanceKm} km · ₹{order.deliveryFee} fee</p>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
                                                     {order.customInstructions && (
-                                                        <div className="bg-yellow-500/10 border border-yellow-500/30 p-2 rounded-md max-w-xs">
-                                                            <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1 flex items-center gap-1"><Info size={10} /> Instructions</p>
-                                                            <p className="text-xs text-yellow-100/80 leading-snug">{order.customInstructions}</p>
+                                                        <div className="bg-yellow-500/5 border border-yellow-500/20 p-3 rounded-xl">
+                                                            <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest mb-1">Instructions</p>
+                                                            <p className="text-xs text-yellow-100/70">{order.customInstructions}</p>
                                                         </div>
                                                     )}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex flex-col gap-2">
-                                                        <a
-                                                            href={order.fileUrl}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary-light hover:bg-primary/20 transition-colors w-full font-bold text-xs uppercase tracking-widest"
-                                                        >
-                                                            <Download size={14} /> Download
+
+                                                    <div className="grid grid-cols-2 gap-3 pt-2">
+                                                        <a href={order.fileUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 py-3 rounded-xl bg-primary/10 text-primary-light font-bold text-[10px] uppercase tracking-widest">
+                                                            <Download size={14} /> File
                                                         </a>
-                                                        <button
-                                                            onClick={() => handleDirectPrint(order.fileUrl)}
-                                                            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors w-full font-bold text-xs uppercase tracking-widest"
-                                                        >
+                                                        <button onClick={() => handleDirectPrint(order.fileUrl)} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-white/10 text-white font-bold text-[10px] uppercase tracking-widest">
                                                             <Printer size={14} /> Print
                                                         </button>
                                                     </div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className="font-bold text-xs uppercase tracking-widest text-gray-300 block mb-1">
-                                                        {order.deliveryOption}
-                                                    </span>
-                                                    {order.deliveryOption === 'Home Delivery' && order.deliveryAddress && (
-                                                        <div className="bg-white/5 border border-white/10 p-2 rounded-md mt-2 max-w-[200px]">
-                                                            <p className="text-[10px] font-bold text-primary-light flex items-center gap-1 uppercase tracking-widest mb-1"><MapPin size={10} /> Address</p>
-                                                            <p className="text-xs text-gray-300 leading-snug break-words">{order.deliveryAddress}</p>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${getStatusColor(order.orderStatus)}`}>
-                                                        {order.orderStatus}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 border-l border-white/5">
-                                                    {viewingRecycleBin ? (
-                                                        <button
-                                                            onClick={() => restoreOrder(order._id)}
-                                                            className="p-3 w-full border border-green-500/30 rounded-lg text-green-500 hover:bg-green-500/10 hover:border-green-500/60 transition-colors flex items-center justify-center gap-2"
-                                                            title="Restore Order"
-                                                        >
-                                                            <RefreshCcw size={14} />
-                                                            <span className="text-[10px] font-bold uppercase tracking-widest">Restore</span>
-                                                        </button>
-                                                    ) : (
-                                                        <div className="flex flex-col gap-2">
-                                                            <select
-                                                                value={order.orderStatus}
-                                                                onChange={(e) => updateOrderStatus(order._id, e.target.value)}
-                                                                className="bg-black border border-white/10 rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest outline-none focus:border-primary text-gray-300 hover:text-white"
-                                                            >
-                                                                {["Pending", "Printing", "Ready", "Delivered"].map(s => (
-                                                                    <option key={s} value={s}>{s}</option>
-                                                                ))}
-                                                            </select>
-                                                            <select
-                                                                value={order.paymentStatus}
-                                                                onChange={(e) => updatePaymentStatus(order._id, e.target.value)}
-                                                                className="bg-black border border-white/10 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-green-500 text-gray-400 hover:text-white"
-                                                            >
-                                                                {["Pending Cash", "Paid", "Refunded", "Failed"].map(s => (
-                                                                    <option key={s} value={s}>{s}</option>
-                                                                ))}
-                                                            </select>
-                                                            <button
-                                                                onClick={() => deleteOrder(order._id)}
-                                                                className="p-2 border border-red-500/20 rounded-lg text-red-500 hover:bg-red-500/10 hover:border-red-500/50 transition-colors flex items-center justify-center gap-2"
-                                                                title="Trash Order"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                                <span className="text-[10px] font-bold uppercase tracking-widest">Trash</span>
+
+                                                    <div className="pt-4 border-t border-white/5 flex flex-wrap gap-2 items-center">
+                                                        {viewingRecycleBin ? (
+                                                            <button onClick={() => restoreOrder(order._id)} className="w-full py-3 bg-green-500/20 text-green-400 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                                                                <RefreshCcw size={14} /> Restore
                                                             </button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </motion.tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
+                                                        ) : (
+                                                            <>
+                                                                <div className="flex-1 space-y-1">
+                                                                    <label className="text-[8px] font-black text-gray-500 uppercase tracking-widest ml-1">Status</label>
+                                                                    <select value={order.orderStatus} onChange={(e) => updateOrderStatus(order._id, e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-2 py-3 text-[10px] font-bold uppercase tracking-widest outline-none">
+                                                                        {["Pending", "Printing", "Ready", "Delivered"].map(s => (<option key={s} value={s}>{s}</option>))}
+                                                                    </select>
+                                                                </div>
+                                                                <div className="flex-1 space-y-1">
+                                                                    <label className="text-[8px] font-black text-gray-500 uppercase tracking-widest ml-1">Payment</label>
+                                                                    <select value={order.paymentStatus} onChange={(e) => updatePaymentStatus(order._id, e.target.value)} className="w-full bg-black border border-white/10 rounded-xl px-2 py-3 text-[10px] font-bold uppercase tracking-widest outline-none">
+                                                                        {["Pending Cash", "Paid", "Refunded", "Failed"].map(s => (<option key={s} value={s}>{s}</option>))}
+                                                                    </select>
+                                                                </div>
+                                                                <button onClick={() => deleteOrder(order._id)} className="p-3 text-gray-500 border border-white/5 rounded-xl">
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </motion.div>
+                        </AnimatePresence>
                     </>
                 ) : (
                     <div className="glass-dark rounded-2xl border border-white/5 overflow-hidden">
@@ -650,7 +825,7 @@ export default function AdminDashboard() {
 
             {/* SETTINGS MODAL */}
             {showSettingsModal && siteSettings && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+                <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto pt-10">
                     <motion.div
                         initial={{ scale: 0.9, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
@@ -784,6 +959,54 @@ export default function AdminDashboard() {
                                         />
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Shop Location for Delivery Fee Calculation */}
+                            <div className="space-y-4 pt-4 border-t border-white/10">
+                                <h3 className="font-bold text-lg text-primary-light uppercase tracking-widest pb-2 flex items-center gap-2">
+                                    <MapPin size={18} className="text-primary" /> Shop Location (Delivery)
+                                </h3>
+                                <p className="text-xs text-gray-400">The website uses this to calculate the delivery distance and fee for each order.</p>
+                                <button
+                                    onClick={fetchShopLocationFromMap}
+                                    className="w-full py-3 rounded-xl bg-green-600/20 border border-green-500/40 hover:bg-green-600/40 text-green-400 font-bold text-sm flex items-center justify-center gap-2 transition-all"
+                                >
+                                    <MapPin size={16} /> 📍 Auto-Detect My Shop Location
+                                </button>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Latitude</label>
+                                        <input
+                                            type="number"
+                                            step="0.00001"
+                                            value={siteSettings.cafeLat || ""}
+                                            onChange={(e) => setSiteSettings({ ...siteSettings, cafeLat: parseFloat(e.target.value) })}
+                                            className="w-full bg-black border border-green-500/20 rounded-xl py-3 px-4 focus:border-green-500 outline-none text-green-400 font-mono"
+                                            placeholder="e.g. 28.61390"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Longitude</label>
+                                        <input
+                                            type="number"
+                                            step="0.00001"
+                                            value={siteSettings.cafeLon || ""}
+                                            onChange={(e) => setSiteSettings({ ...siteSettings, cafeLon: parseFloat(e.target.value) })}
+                                            className="w-full bg-black border border-green-500/20 rounded-xl py-3 px-4 focus:border-green-500 outline-none text-green-400 font-mono"
+                                            placeholder="e.g. 77.20900"
+                                        />
+                                    </div>
+                                </div>
+                                {siteSettings.cafeLat && siteSettings.cafeLon && (
+                                    <a
+                                        href={`https://www.google.com/maps?q=${siteSettings.cafeLat},${siteSettings.cafeLon}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-400 hover:underline flex items-center gap-1"
+                                    >
+                                        <MapPin size={12} /> Verify on Google Maps ↗
+                                    </a>
+                                )}
                             </div>
 
                             {/* Flash Message Config */}
